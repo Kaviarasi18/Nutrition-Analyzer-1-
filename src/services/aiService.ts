@@ -4,7 +4,8 @@ const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
 export async function analyzeFoodImage(base64Image: string) {
   try {
-    const model = "gemini-1.5-flash";
+    // Use a supported Gemini model for the current GenAI API version.
+    const model = "gemini-2.5-flash";
 
     const prompt = `
       Analyze this food image and provide a JSON response with the following structure:
@@ -14,9 +15,10 @@ export async function analyzeFoodImage(base64Image: string) {
         "protein": number,
         "fats": number,
         "carbs": number,
-        "description": "brief summary"
+        "description": "brief summary",
+        "recommendations": ["healthier alternative 1", "recipe suggestion 1", "nutritional tip 1"]
       }
-      Be as accurate as possible with the nutritional estimates. Return ONLY the JSON.
+      Be as accurate as possible with the nutritional estimates. Provide 2-3 practical recommendations for healthier eating or meal ideas based on the detected foods. Return ONLY the JSON.
     `;
 
     const result = await genAI.models.generateContent({

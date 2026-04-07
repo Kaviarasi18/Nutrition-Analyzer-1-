@@ -21,12 +21,15 @@ import {
   User,
   Plus
 } from 'lucide-react';
+
+console.log('Loaded Nutrition-Analyzer-1- app from src/App.tsx');
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 
 // --- Types ---
 interface AnalysisResult {
   id?: string;
+  user_id?: string;
   detected_foods: string[];
   calories: number;
   protein: number;
@@ -34,6 +37,7 @@ interface AnalysisResult {
   carbs: number;
   image_url: string;
   created_at?: string;
+  recommendations?: string[];
 }
 
 // --- Main App Component ---
@@ -43,11 +47,13 @@ export default function App() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('auth session on load', session);
       setSession(session);
       setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      console.log('auth state changed', _event, session);
       setSession(session);
     });
 
@@ -76,20 +82,31 @@ function AuthScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [justSignedUp, setJustSignedUp] = useState(false);
 
   const handleAuth = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setSuccess(null);
 
     try {
       if (isLogin) {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       } else {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
-        alert('Check your email for confirmation!');
+
+        if (data?.session) {
+          setSuccess('Signup successful. You are now signed in.');
+          setJustSignedUp(false);
+        } else {
+          setSuccess('Signup successful. Please sign in with your new account.');
+          setIsLogin(true);
+          setJustSignedUp(true);
+        }
       }
     } catch (err: any) {
       setError(err.message);
@@ -140,6 +157,9 @@ function AuthScreen() {
           {error && (
             <p className="text-red-500 text-sm bg-red-50 p-3 rounded-lg">{error}</p>
           )}
+          {success && (
+            <p className="text-emerald-700 text-sm bg-emerald-50 p-3 rounded-lg">{success}</p>
+          )}
 
           <button 
             type="submit" 
@@ -151,8 +171,21 @@ function AuthScreen() {
         </form>
 
         <div className="mt-6 text-center">
+          {justSignedUp && (
+            <button
+              onClick={() => setJustSignedUp(false)}
+              className="mb-4 inline-flex items-center justify-center px-4 py-2 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition"
+            >
+              Continue to Sign In
+            </button>
+          )}
           <button 
-            onClick={() => setIsLogin(!isLogin)}
+            onClick={() => {
+              setIsLogin(!isLogin);
+              setError(null);
+              setSuccess(null);
+              setJustSignedUp(false);
+            }}
             className="text-emerald-600 font-medium hover:underline"
           >
             {isLogin ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
@@ -169,19 +202,95 @@ function Dashboard({ session }: { session: any }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [history, setHistory] = useState<AnalysisResult[]>([]);
   const [currentResult, setCurrentResult] = useState<AnalysisResult | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Image compression helper
+  const compressImage = (file: File): Promise<File> => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d')!;
+      const img = new Image();
+      
+      img.onload = () => {
+        // Resize to max 800px width/height while maintaining aspect ratio
+        const maxSize = 800;
+        let { width, height } = img;
+        
+        if (width > height) {
+          if (width > maxSize) {
+            height = (height * maxSize) / width;
+            width = maxSize;
+          }
+        } else {
+          if (height > maxSize) {
+            width = (width * maxSize) / height;
+            height = maxSize;
+          }
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const compressedFile = new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() });
+            resolve(compressedFile);
+          } else {
+            resolve(file); // Fallback to original
+          }
+        }, 'image/jpeg', 0.8); // 80% quality
+      };
+      
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
+  const readFileAsDataURL = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === 'string') {
+          resolve(reader.result);
+        } else {
+          reject(new Error('Unable to read file as data URL'));
+        }
+      };
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+  };
 
   useEffect(() => {
     fetchHistory();
   }, []);
 
   const fetchHistory = async () => {
+    if (!session?.user?.id) {
+      setHistoryError('No authenticated user session available.');
+      return;
+    }
+
+    console.log('Fetching history for user:', session.user.id);
     const { data, error } = await supabase
       .from('food_analysis')
       .select('*')
+      .eq('user_id', session.user.id)
       .order('created_at', { ascending: false });
-    
-    if (data) setHistory(data);
+
+    console.log('History fetch result:', { data, error });
+    if (data) {
+      setHistory(data);
+      setHistoryError(null);
+    }
+    if (error) {
+      console.error('History fetch error:', error);
+      setHistory([]);
+      setHistoryError(error.message);
+    }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -192,52 +301,70 @@ function Dashboard({ session }: { session: any }) {
     setCurrentResult(null);
 
     try {
-      // 1. Upload to Supabase Storage
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Math.random()}.${fileExt}`;
-      const filePath = `${session.user.id}/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('food-images')
-        .upload(filePath, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('food-images')
-        .getPublicUrl(filePath);
+      // 1. Compress image for faster upload and analysis
+      const compressedFile = await compressImage(file);
 
       // 2. Convert to Base64 for Gemini
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onloadend = async () => {
-        const base64data = reader.result as string;
+      const base64data = await readFileAsDataURL(compressedFile);
 
-        // 3. Analyze with AI
-        const analysis = await analyzeFoodImage(base64data);
-        
-        const finalResult: AnalysisResult = {
-          ...analysis,
-          image_url: publicUrl,
-          user_id: session.user.id
-        };
-
-        // 4. Save to Database
-        const { data: savedData, error: saveError } = await supabase
-          .from('food_analysis')
-          .insert([finalResult])
-          .select()
-          .single();
-
-        if (saveError) throw saveError;
-
-        setCurrentResult(savedData);
-        fetchHistory();
+      // 3. Analyze with AI
+      const analysis = await analyzeFoodImage(base64data);
+      
+      const localImageUrl = URL.createObjectURL(compressedFile);
+      const finalResult: AnalysisResult = {
+        ...analysis,
+        image_url: localImageUrl,
+        user_id: session.user.id
       };
+
+      setCurrentResult(finalResult);
+      setAnalyzing(false);
+
+      // 4. Upload image and save history in the background
+      (async () => {
+        try {
+          const fileExt = compressedFile.name.split('.').pop();
+          const fileName = `${Math.random()}.${fileExt}`;
+          const filePath = `${session.user.id}/${fileName}`;
+
+          const { error: uploadError } = await supabase.storage
+            .from('food-images')
+            .upload(filePath, compressedFile);
+
+          if (uploadError) throw uploadError;
+
+          const { data: { publicUrl } } = supabase.storage
+            .from('food-images')
+            .getPublicUrl(filePath);
+
+          const resultToSave = {
+            ...analysis,
+            image_url: publicUrl,
+            user_id: session.user.id
+          };
+
+          const { data: savedData, error: saveError } = await supabase
+            .from('food_analysis')
+            .insert([resultToSave])
+            .select()
+            .single();
+
+          if (saveError) {
+            console.error('DB save error:', saveError);
+            setSaveError(saveError.message);
+          } else {
+            console.log('Saved to DB:', savedData);
+            setCurrentResult(savedData || resultToSave);
+            setSaveError(null);
+            fetchHistory();
+          }
+        } catch (backgroundError) {
+          console.error('Background save error:', backgroundError);
+        }
+      })();
     } catch (err: any) {
       console.error(err);
       alert('Error analyzing food: ' + err.message);
-    } finally {
       setAnalyzing(false);
     }
   };
@@ -318,14 +445,16 @@ function Dashboard({ session }: { session: any }) {
             )}
 
             {/* Analyzing State */}
-            {analyzing && (
-              <div className="flex flex-col items-center justify-center py-20">
-                <div className="relative">
+            {!currentResult && analyzing && (
+              <div className="border-2 border-dashed border-emerald-300 rounded-3xl p-12 flex flex-col items-center justify-center bg-emerald-50/50 transition-all">
+                <div className="relative mb-6">
                   <div className="w-24 h-24 border-4 border-emerald-100 border-t-emerald-600 rounded-full animate-spin" />
                   <Utensils className="w-10 h-10 text-emerald-600 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
                 </div>
-                <h3 className="text-xl font-semibold mt-8 text-slate-900">Analyzing your meal...</h3>
-                <p className="text-slate-500 mt-2">Gemini AI is identifying ingredients and estimating macros</p>
+                <h2 className="text-xl font-semibold text-slate-900 mb-2">Analyzing your meal...</h2>
+                <p className="text-slate-500 text-center max-w-xs">
+                  Please wait while Gemini AI identifies the ingredients and estimates macros.
+                </p>
               </div>
             )}
 
@@ -371,6 +500,20 @@ function Dashboard({ session }: { session: any }) {
                         <MacroCard icon={<Wheat className="w-4 h-4" />} label="Carbs" value={`${currentResult.carbs}g`} color="bg-orange-50 text-orange-600" />
                       </div>
 
+                      {currentResult.recommendations && currentResult.recommendations.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Recommendations</h4>
+                          <ul className="space-y-2">
+                            {currentResult.recommendations.map((rec, i) => (
+                              <li key={i} className="flex items-start gap-2 text-sm text-slate-700">
+                                <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-2 flex-shrink-0" />
+                                {rec}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
                       <button 
                         onClick={() => setCurrentResult(null)}
                         className="w-full mt-4 py-3 border border-slate-200 rounded-xl font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
@@ -391,6 +534,16 @@ function Dashboard({ session }: { session: any }) {
             exit={{ opacity: 0, x: -20 }}
             className="grid gap-4"
           >
+            {historyError && (
+              <div className="rounded-3xl border border-red-200 bg-red-50 text-red-700 p-4 text-sm">
+                Unable to load history: {historyError}
+              </div>
+            )}
+            {saveError && (
+              <div className="rounded-3xl border border-amber-200 bg-amber-50 text-amber-700 p-4 text-sm">
+                Warning: history save failed - {saveError}
+              </div>
+            )}
             {history.length === 0 ? (
               <div className="text-center py-20 text-slate-500">
                 <History className="w-12 h-12 mx-auto mb-4 opacity-20" />
