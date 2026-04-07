@@ -1,0 +1,7 @@
+{
+  "name": "NutriScan AI",
+  "description": "AI-powered nutrition analyzer using Supabase and Gemini Vision.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
