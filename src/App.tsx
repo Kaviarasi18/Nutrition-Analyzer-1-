@@ -202,6 +202,7 @@ function Dashboard({ session }: { session: any }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [history, setHistory] = useState<AnalysisResult[]>([]);
   const [currentResult, setCurrentResult] = useState<AnalysisResult | null>(null);
+  const [selectedHistoryItem, setSelectedHistoryItem] = useState<AnalysisResult | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -550,38 +551,125 @@ function Dashboard({ session }: { session: any }) {
                 <p>No analysis history yet</p>
               </div>
             ) : (
-              history.map((item) => (
-                <div key={item.id} className="glass-card rounded-2xl p-4 flex items-center gap-4 hover:shadow-md transition-shadow">
-                  <img 
-                    src={item.image_url} 
-                    className="w-16 h-16 rounded-xl object-cover" 
-                    alt="Food"
-                    referrerPolicy="no-referrer"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-bold text-slate-900 truncate">
-                      {item.detected_foods.join(', ')}
-                    </h4>
-                    <p className="text-sm text-slate-500">
-                      {new Date(item.created_at!).toLocaleDateString()} • {item.calories} kcal
-                    </p>
+              <>
+                {history.map((item) => (
+                  <div 
+                    key={item.id} 
+                    onClick={() => setSelectedHistoryItem(item)}
+                    className="glass-card rounded-2xl p-4 flex items-center gap-4 hover:shadow-md hover:cursor-pointer hover:bg-slate-50 transition-all"
+                  >
+                    <img 
+                      src={item.image_url} 
+                      className="w-16 h-16 rounded-xl object-cover" 
+                      alt="Food"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-bold text-slate-900 truncate">
+                        {item.detected_foods.join(', ')}
+                      </h4>
+                      <p className="text-sm text-slate-500">
+                        {new Date(item.created_at!).toLocaleDateString()} • {item.calories} kcal
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="text-center px-2">
+                        <p className="text-[10px] text-slate-400 font-bold uppercase">P</p>
+                        <p className="text-sm font-bold text-blue-600">{item.protein}g</p>
+                      </div>
+                      <div className="text-center px-2">
+                        <p className="text-[10px] text-slate-400 font-bold uppercase">F</p>
+                        <p className="text-sm font-bold text-amber-600">{item.fats}g</p>
+                      </div>
+                      <div className="text-center px-2">
+                        <p className="text-[10px] text-slate-400 font-bold uppercase">C</p>
+                        <p className="text-sm font-bold text-orange-600">{item.carbs}g</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-slate-400" />
                   </div>
-                  <div className="flex gap-2">
-                    <div className="text-center px-2">
-                      <p className="text-[10px] text-slate-400 font-bold uppercase">P</p>
-                      <p className="text-sm font-bold text-blue-600">{item.protein}g</p>
-                    </div>
-                    <div className="text-center px-2">
-                      <p className="text-[10px] text-slate-400 font-bold uppercase">F</p>
-                      <p className="text-sm font-bold text-amber-600">{item.fats}g</p>
-                    </div>
-                    <div className="text-center px-2">
-                      <p className="text-[10px] text-slate-400 font-bold uppercase">C</p>
-                      <p className="text-sm font-bold text-orange-600">{item.carbs}g</p>
-                    </div>
-                  </div>
-                </div>
-              ))
+                ))}
+
+                {/* History Detail Modal */}
+                <AnimatePresence>
+                  {selectedHistoryItem && (
+                    <motion.div 
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      onClick={() => setSelectedHistoryItem(null)}
+                      className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+                    >
+                      <motion.div 
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="glass-card rounded-3xl overflow-hidden max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+                      >
+                        <div className="grid md:grid-cols-2 gap-0">
+                          <div className="h-64 md:h-auto relative">
+                            <img 
+                              src={selectedHistoryItem.image_url} 
+                              alt="Analyzed food" 
+                              className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
+                          <div className="p-8">
+                            <div className="flex items-center justify-between mb-6">
+                              <h2 className="text-2xl font-bold text-slate-900">Analysis Details</h2>
+                              <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-sm font-semibold">
+                                {selectedHistoryItem.calories} kcal
+                              </span>
+                            </div>
+
+                            <div className="space-y-6">
+                              <div>
+                                <h4 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Detected Foods</h4>
+                                <div className="flex flex-wrap gap-2">
+                                  {selectedHistoryItem.detected_foods.map((food, i) => (
+                                    <span key={i} className="px-3 py-1 bg-slate-100 text-slate-700 rounded-lg text-sm">
+                                      {food}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-3 gap-4">
+                                <MacroCard icon={<Beef className="w-4 h-4" />} label="Protein" value={`${selectedHistoryItem.protein}g`} color="bg-blue-50 text-blue-600" />
+                                <MacroCard icon={<Droplets className="w-4 h-4" />} label="Fats" value={`${selectedHistoryItem.fats}g`} color="bg-amber-50 text-amber-600" />
+                                <MacroCard icon={<Wheat className="w-4 h-4" />} label="Carbs" value={`${selectedHistoryItem.carbs}g`} color="bg-orange-50 text-orange-600" />
+                              </div>
+
+                              {selectedHistoryItem.recommendations && selectedHistoryItem.recommendations.length > 0 && (
+                                <div>
+                                  <h4 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Recommendations</h4>
+                                  <ul className="space-y-2">
+                                    {selectedHistoryItem.recommendations.map((rec, i) => (
+                                      <li key={i} className="flex items-start gap-2 text-sm text-slate-700">
+                                        <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-2 flex-shrink-0" />
+                                        {rec}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+
+                              <button 
+                                onClick={() => setSelectedHistoryItem(null)}
+                                className="w-full py-3 border border-slate-200 rounded-xl font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+                              >
+                                Close
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </>
             )}
           </motion.div>
         )}

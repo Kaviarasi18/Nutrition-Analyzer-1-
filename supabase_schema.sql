@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS public.food_analysis (
     protein FLOAT DEFAULT 0,
     fats FLOAT DEFAULT 0,
     carbs FLOAT DEFAULT 0,
+    description TEXT,
+    recommendations JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
